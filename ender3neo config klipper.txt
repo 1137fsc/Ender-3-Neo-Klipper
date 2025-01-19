@@ -1,0 +1,224 @@
+# Written for Michael Anderson
+# Written by Jonathan Anderson
+#For the following printer:
+#!Ender-3 Max Neo
+# printer_size: 300x300x300
+# version: 3.6
+# This file contains pin mappings for the stock 2020 Creality Ender 3
+# MAX. To use this config, during "make menuconfig" select the
+# STM32F103 with a "28KiB bootloader" and serial (on USART1 PA10/PA9)
+# communication.
+
+# Because this printer has factory wiring, mounts, and firmware for
+# a BLTouch, but does not ship with one at this time, default values
+# for the sensor have been specified, but disabled, in anticipation of
+# future revisions or user modification. User should take care to
+# customize the offsets, particularly z-offset, for their specific unit.
+
+# Flash this firmware by copying "out/klipper.bin" to a SD card and
+# turning on the printer with the card inserted. The firmware
+# filename must end in ".bin" and must not match the last filename
+# that was flashed.
+
+# See docs/Config_Reference.md for a description of parameters.
+
+###fluidd set
+[virtual_sdcard]
+path: ~/gcode_files
+
+
+
+[gcode_macro PAUSE]
+description: Pause the actual running print
+rename_existing: PAUSE_BASE
+# change this if you need more or less extrusion
+variable_extrude: 1.0
+gcode:
+##### read E from pause macro #####
+{% set E = printer["gcode_macro PAUSE"].extrude|float %}
+##### set park positon for x and y #####
+# default is your max posion from your printer.cfg
+{% set x_park = printer.toolhead.axis_maximum.x|float - 5.0 %}
+{% set y_park = printer.toolhead.axis_maximum.y|float - 5.0 %}
+##### calculate save lift position #####
+{% set max_z = printer.toolhead.axis_maximum.z|float %}
+{% set act_z = printer.toolhead.position.z|float %}
+{% if act_z < (max_z - 2.0) %}
+{% set z_safe = 2.0 %}
+{% else %}
+{% set z_safe = max_z - act_z %}
+{% endif %}
+##### end of definitions #####
+PAUSE_BASE
+G91
+{% if printer.extruder.can_extrude|lower == 'true' %}
+G1 E-{E} F2100
+{% else %}
+{action_respond_info("Extruder not hot enough")}
+{% endif %}
+{% if "xyz" in printer.toolhead.homed_axes %}
+G1 Z{z_safe} F900
+G90
+G1 X{x_park} Y{y_park} F6000
+{% else %}
+{action_respond_info("Printer not homed")}
+{% endif %}
+
+[gcode_macro RESUME]
+description: Resume the actual running print
+rename_existing: RESUME_BASE
+gcode:
+##### read E from pause macro #####
+{% set E = printer["gcode_macro PAUSE"].extrude|float %}
+#### get VELOCITY parameter if specified ####
+{% if 'VELOCITY' in params|upper %}
+{% set get_params = ('VELOCITY=' + params.VELOCITY) %}
+{%else %}
+{% set get_params = "" %}
+{% endif %}
+##### end of definitions #####
+{% if printer.extruder.can_extrude|lower == 'true' %}
+G91
+G1 E{E} F2100
+{% else %}
+{action_respond_info("Extruder not hot enough")}
+{% endif %}
+RESUME_BASE {get_params}
+
+[gcode_macro CANCEL_PRINT]
+description: Cancel the actual running print
+rename_existing: CANCEL_PRINT_BASE
+gcode:
+TURN_OFF_HEATERS
+{% if "xyz" in printer.toolhead.homed_axes %}
+G91
+G1 Z4.5 F300
+G90
+{% else %}
+{action_respond_info("Printer not homed")}
+{% endif %}
+G28 X Y
+{% set y_park = printer.toolhead.axis_maximum.y|float - 5.0 %}
+G1 Y{y_park} F2000
+M84
+CANCEL_PRINT_BASE
+
+[include cx_printer.cfg]
+
+[display_status]
+
+[pause_resume]
+
+[stepper_x] # Configuration for the X-axis stepper motor
+step_pin: PC2 # Pin controlling the step pulses for the X motor
+dir_pin: PB9 # Pin controlling the direction of the X motor
+enable_pin: !PC3 # Pin enabling the X motor (inverted logic)
+microsteps: 16 # Microstepping level for smoother movement; typically 16
+rotation_distance: 40 # Distance traveled per full rotation of the motor
+endstop_pin: ^PA5 # Pin for the X-axis endstop
+position_endstop: 0 # Position of the endstop; adjust if it's not at 0
+position_max: 310 # Maximum travel distance on the X-axis
+position_min: 0 # Minimum travel distance (usually 0)
+homing_speed: 120 # Speed for homing (mm/s); increase for faster homing but risk missing the endstop
+
+[stepper_y] # Configuration for the Y-axis stepper motor
+step_pin: PB8 # Pin controlling the step pulses for the Y motor
+dir_pin: PB7 # Pin controlling the direction of the Y motor
+enable_pin: !PC3 # Pin enabling the Y motor (inverted logic)
+microsteps: 16 # Microstepping level for smoother movement
+rotation_distance: 40 # Distance traveled per full rotation of the motor
+endstop_pin: ^PA6 # Pin for the Y-axis endstop
+position_min: 0 # Minimum travel distance (usually 0)
+position_max: 310 # Maximum travel distance on the Y-axis
+position_endstop: 0 # Position of the endstop
+homing_speed: 120 # Speed for homing; adjust if issues with skipping occur
+
+[stepper_z] # Configuration for the Z-axis stepper motor
+step_pin: PB6 # Pin controlling the step pulses for the Z motor
+dir_pin: !PB5 # Pin controlling the direction of the Z motor (inverted logic)
+enable_pin: !PC3 # Pin enabling the Z motor (inverted logic)
+microsteps: 16 # Microstepping level for smoother movement
+rotation_distance: 8 # Distance traveled per full rotation of the motor
+endstop_pin: probe:z_virtual_endstop # BLTouch virtual endstop (use for BLTouch)
+position_min: -5.5 # Minimum allowable position; adjust for Z-offsets
+position_max: 300 # Maximum travel distance on the Z-axis
+homing_speed: 35 # Speed for Z-axis homing; slower for precision
+
+[extruder] # Extruder motor and heater configuration
+max_extrude_only_distance: 1000.0 # Maximum extrusion distance in mm
+step_pin: PB4 # Pin controlling the step pulses for the extruder
+dir_pin: PB3 # Pin controlling the extruder direction
+enable_pin: !PC3 # Pin enabling the extruder motor (inverted logic)
+microsteps: 16 # Microstepping for smoother extrusion
+rotation_distance: 7.53 # Distance extruded per motor rotation
+nozzle_diameter: 0.400 # Diameter of the nozzle in mm
+filament_diameter: 1.750 # Diameter of the filament in mm
+heater_pin: PA1 # Pin controlling the extruder heater
+sensor_type: EPCOS 100K B57560G104F # Thermistor type for the extruder
+sensor_pin: PC5 # Pin for the thermistor
+#control: pid # PID control for stable temperatures
+#pid_Kp: 21.527 # Proportional gain for the PID loop
+#pid_Ki: 1.063 # Integral gain for the PID loop
+#pid_Kd: 108.982 # Derivative gain for the PID loop
+min_temp: 0 # Minimum allowable temperature
+max_temp: 310 # Maximum allowable temperature
+pressure_advance: 0.38 # Compensates for extrusion lag; adjust for better corners
+
+[printer] # General printer configuration
+kinematics: cartesian # Defines the kinematics type (e.g., cartesian, coreXY)
+max_velocity: 350 # Maximum movement speed in mm/s
+max_accel: 3500 # Maximum acceleration in mm/s²
+max_z_velocity: 35 # Maximum Z-axis speed in mm/s
+max_z_accel: 300 # Maximum Z-axis acceleration in mm/s²
+square_corner_velocity: 5.0 # Maximum speed for sharp corners; lower for better quality
+
+[safe_z_home] # Homing configuration for BLTouch
+home_xy_position: 183.3, 193 # Position to home Z after X and Y are homed
+speed: 125 # Speed for homing movement
+z_hop: 10 # Z-axis lift during homing to avoid collisions
+z_hop_speed: 8 # Speed for Z-axis lift
+
+[bltouch] # Configuration for BLTouch probe
+sensor_pin: ^PB1 # Pin for BLTouch sensor
+control_pin: PB0 # Pin for BLTouch control
+set_output_mode: 5V # Voltage mode for the probe
+pin_move_time: 0.4 # Time for probe movement
+stow_on_each_sample: False # Avoid stowing probe after each sample
+probe_with_touch_mode: True # Use touch mode for probing
+x_offset: -31.8 # X-axis offset from the nozzle
+y_offset: -40.5 # Y-axis offset from the nozzle
+z_offset: 0 # Z-axis offset; calibrate for accurate probing
+samples: 2 # Number of samples per probe point
+sample_retract_dist: 2 # Retraction distance between samples
+samples_result: average # Use average of samples for accuracy
+
+[heater_bed] # Heated bed configuration
+heater_pin: PA2 # Pin controlling the bed heater
+sensor_type: EPCOS 100K B57560G104F # Thermistor type for the bed
+sensor_pin: PC4 # Pin for the thermistor
+#control: pid # PID control for stable temperatures
+#pid_Kp: 54.027 # Proportional gain for the PID loop
+#pid_Ki: 0.770 # Integral gain for the PID loop
+#pid_Kd: 948.182 # Derivative gain for the PID loop
+min_temp: 0 # Minimum allowable bed temperature
+max_temp: 130 # Maximum allowable bed temperature
+
+[fan] # Main cooling fan configuration
+pin: PA0 # Pin for the cooling fan
+
+[fan_generic extruder_partfan] # Extruder part cooling fan
+pin: PC6 # Pin for the part cooling fan
+
+[mcu rpi]
+serial: /tmp/klipper_host_mcu
+
+[adxl345]
+cs_pin: rpi:None
+spi_speed: 2000000
+spi_bus: spidev2.0
+
+[resonance_tester]
+accel_chip: adxl345
+accel_per_hz: 70
+probe_points:
+     150,150,10
